@@ -655,7 +655,14 @@ struct server_slot {
         t_print_last = t_now;
         n_gen_last = stats.n_gen;
 
-        SLT_INF(*this, "n_gen = %6d, tg = %6.2f t/s, tg_3s = %6.2f t/s\n", (int) stats.n_gen, n_gen_second, n_gen_second_win);
+        const int32_t mtp_depth = common_speculative_get_adaptive_draft_depth(spec, id);
+        if (mtp_depth >= 0) {
+            SLT_INF(*this, "n_gen = %6d, tg = %6.2f t/s, tg_3s = %6.2f t/s, mtp_depth = %d\n",
+                (int) stats.n_gen, n_gen_second, n_gen_second_win, mtp_depth);
+        } else {
+            SLT_INF(*this, "n_gen = %6d, tg = %6.2f t/s, tg_3s = %6.2f t/s\n",
+                (int) stats.n_gen, n_gen_second, n_gen_second_win);
+        }
     }
 
     void print_timings_pp() const {

@@ -219,6 +219,7 @@ struct common_speculative_impl {
     // (optional) serialize/restore per-seq internal state (e.g. eagle3's deferred boundary).
     virtual bool get_state(llama_seq_id /*seq_id*/, std::vector<uint8_t> & /*data*/) const { return false; }
     virtual void set_state(llama_seq_id /*seq_id*/, const std::vector<uint8_t> & /*data*/) {}
+    virtual int32_t adaptive_draft_depth(llama_seq_id /*seq_id*/) const { return -1; }
 };
 
 struct common_speculative_impl_draft_simple : public common_speculative_impl {
@@ -1935,6 +1936,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         n_last[seq_id] = 0;
     }
 
+    int32_t adaptive_draft_depth(llama_seq_id seq_id) const override {
+        return adaptive ? adaptive_ctrl[seq_id].n_cur : -1;
+    }
+
     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) override {
         if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
             return;
@@ -2999,6 +3004,21 @@ common_speculative_draft_params & common_speculative_get_draft_params(
     GGML_ASSERT(seq_id < (llama_seq_id) spec->dparams.size());
 
     return spec->dparams[seq_id];
+}
+
+int32_t common_speculative_get_adaptive_draft_depth(const common_speculative * spec, llama_seq_id seq_id) {
+    if (spec == nullptr || seq_id < 0 || seq_id >= (llama_seq_id) spec->dparams.size()) {
+        return -1;
+    }
+
+    for (const auto & impl : spec->impls) {
+        const int32_t depth = impl->adaptive_draft_depth(seq_id);
+        if (depth >= 0) {
+            return depth;
+        }
+    }
+
+    return -1;
 }
 
 void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt) {

@@ -83,6 +83,9 @@ struct common_speculative_draft_params {
 
 common_speculative_draft_params & common_speculative_get_draft_params(common_speculative * spec, llama_seq_id seq_id);
 
+// return the active adaptive MTP depth, or -1 when adaptive MTP is not active
+int32_t common_speculative_get_adaptive_draft_depth(const common_speculative * spec, llama_seq_id seq_id);
+
 // optionally call once at the beginning of a new generation
 void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt);
 
