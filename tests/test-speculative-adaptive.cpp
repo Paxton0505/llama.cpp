@@ -119,26 +119,23 @@ static void test_drop(void) {
     }
     assert(ctrl.n_cur == 3);
 
-    // at depth 3 the drop budget is floored at 20: a total miss adds 3, so
-    // 7 misses drop one step
-    for (int i = 0; i < 6; ++i) {
-        ctrl.update(3, 0, 8, 1);
-        assert(ctrl.n_cur == 3);
-    }
-    assert(ctrl.n_drop == 18);
+    // depth 3 has a budget of 6; each total miss adds 3
+    ctrl.update(3, 0, 8, 1);
+    assert(ctrl.n_cur == 3);
+    assert(ctrl.n_drop == 3);
     ctrl.update(3, 0, 8, 1);
     assert(ctrl.n_cur == 2);
     assert(ctrl.n_drop == 0);
 
-    // at depth 2 the budget is floored at 20: a near miss adds 1, so 20 near
-    // misses drop one step (the depth-1 collapse needs real sustained failure)
-    for (int i = 0; i < 19; ++i) {
+    // depth 2 has a budget of 4; four near misses drop one step
+    for (int i = 0; i < 3; ++i) {
         ctrl.update(2, 1, 8, 1);
         assert(ctrl.n_cur == 2);
     }
-    assert(ctrl.n_drop == 19);
+    assert(ctrl.n_drop == 3);
     ctrl.update(2, 1, 8, 1);
     assert(ctrl.n_cur == 1);
+    assert(ctrl.n_drop == 0);
 
     // back at the floor, misses no longer accumulate pressure
     for (int i = 0; i < 100; ++i) {
@@ -147,37 +144,73 @@ static void test_drop(void) {
     assert(ctrl.n_cur == 1);
     assert(ctrl.n_drop == 0);
 
-    // deep depths hold a little longer: at depth 5 the budget is 25, a total
-    // miss adds 5, so 5 misses drop one step
+    // at depth 5 the budget is 10; a total miss adds 5, so two drop it
     ctrl.reset(8, 1);
     ctrl.n_cur = 5; // simulate a controller that already climbed to 5
-    for (int i = 0; i < 4; ++i) {
-        ctrl.update(5, 0, 8, 1);
-        assert(ctrl.n_cur == 5);
-    }
-    assert(ctrl.n_drop == 20);
-    ctrl.update(5, 0, 8, 1); // 20 + 5 = 25 -> drop
+    ctrl.update(5, 0, 8, 1);
+    assert(ctrl.n_cur == 5);
+    assert(ctrl.n_drop == 5);
+    ctrl.update(5, 0, 8, 1); // 5 + 5 >= 8 -> drop
     assert(ctrl.n_cur == 4);
     assert(ctrl.n_drop == 0);
+
+    assert(common_speculative_adaptive::drop_pressure(12) == 24);
 }
 
-static void test_full_accept_resets_pressure(void) {
+static void test_half_climb_accept_resets_pressure(void) {
     common_speculative_adaptive ctrl;
     ctrl.reset(8, 1);
     ctrl.n_cur = 3;
 
-    // accumulate pressure, then a full accept wipes it out
-    for (int i = 0; i < 5; ++i) {
-        ctrl.update(3, 1, 8, 1); // near miss: +2 pressure at depth 3
+    // at depth 3, the 10-round climb threshold clears pressure at five full accepts
+    for (int i = 0; i < 4; ++i) {
+        ctrl.update(3, 2, 8, 1); // near miss: +1 pressure at depth 3
     }
-    assert(ctrl.n_drop == 10);
+    assert(ctrl.n_drop == 4);
+    for (int i = 0; i < 4; ++i) {
+        ctrl.update(3, 3, 8, 1);
+        assert(ctrl.n_drop == 4);
+        assert(ctrl.n_cur == 3);
+    }
     ctrl.update(3, 3, 8, 1);
     assert(ctrl.n_drop == 0);
+    assert(ctrl.n_cur == 3);
+    assert(ctrl.n_climb == 5);
 
     // the miss pressure uses the drafted count, not the depth: a truncated
     // draft (2 tokens at depth 3) with 1 accepted adds 1, not 2
     ctrl.update(2, 1, 8, 1);
     assert(ctrl.n_drop == 1);
+
+    // an odd climb threshold of 3 clears pressure after ceil(3 / 2) = 2 accepts
+    ctrl.reset(8, 1);
+    ctrl.n_cur = 5;
+    ctrl.n_drop = 7;
+    ctrl.update(5, 5, 8, 1);
+    assert(ctrl.n_drop == 7);
+    ctrl.update(5, 5, 8, 1);
+    assert(ctrl.n_drop == 0);
+    assert(ctrl.n_cur == 5);
+    ctrl.update(5, 5, 8, 1);
+    assert(ctrl.n_cur == 6);
+
+    // at depth 12, one of the two full accepts needed to climb clears 14 pressure
+    ctrl.reset(12, 3);
+    ctrl.n_cur = 12;
+    ctrl.n_drop = 14;
+    ctrl.update(12, 12, 12, 3);
+    assert(ctrl.n_cur == 12);
+    assert(ctrl.n_drop == 0);
+    assert(ctrl.n_climb == 1);
+
+    // the depth-12 drop budget is 24
+    ctrl.n_drop = 22;
+    ctrl.update(12, 11, 12, 3);
+    assert(ctrl.n_cur == 12);
+    assert(ctrl.n_drop == 23);
+    ctrl.update(12, 11, 12, 3);
+    assert(ctrl.n_cur == 11);
+    assert(ctrl.n_drop == 0);
 }
 
 static void test_floor(void) {
@@ -209,7 +242,7 @@ int main(void) {
     test_reset();
     test_climb();
     test_drop();
-    test_full_accept_resets_pressure();
+    test_half_climb_accept_resets_pressure();
     test_floor();
 
     printf("test-speculative-adaptive: all tests OK\n\n");

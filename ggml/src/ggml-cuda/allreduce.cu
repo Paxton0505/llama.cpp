@@ -931,6 +931,17 @@ bool ggml_cuda_ar_allreduce(
         p->copy_threshold > 0 &&
         nbytes >= p->copy_threshold;
 
+    if (getenv("GGML_CUDA_P2P_TRACE") != nullptr) {
+        const char * route = use_copy_engine ? "host-copy-engine-staging" : "host-kernel-staging";
+#ifndef GGML_USE_HIP
+        if (!use_copy_engine && p->p2p_ok) {
+            route = "device-p2p-kernel";
+        }
+#endif
+        GGML_LOG_INFO("%s: P2P_TRACE route=%s elements=%lld input_bytes=%zu wire_bytes=%zu wire_type=%d\n",
+                      __func__, route, (long long) ne, input_nbytes, nbytes, (int) kernel_type);
+    }
+
     // BF16 inactive-shard zeroing: when use_bf16 is on, the combined kernel
     // (chunked kernel path) and the combined add kernel (copy_engine path)
     // both accumulate into the F32 tensor data directly, so an inactive

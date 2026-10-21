@@ -29,9 +29,9 @@ struct common_speculative_adaptive {
     }
 
     // accumulated (n_draft - n_accepted) needed to drop one step from depth N;
-    // scaled by depth, with a floor so shallow depths do not collapse too fast
+    // twice the current depth
     static int drop_pressure(int depth) {
-        return std::max(depth * 5, 20);
+        return depth * 2;
     }
 
     // reset to the floor max(1, n_min_adaptive), bounded by the ceiling n_max;
@@ -56,11 +56,17 @@ struct common_speculative_adaptive {
         const int floor = std::max(1, n_min_adaptive);
 
         if (n_accepted == n_draft) {
-            n_drop = 0;
+            const int climb_limit = climb_threshold(n_cur);
+            const int pressure_reset_limit = (climb_limit + 1) / 2;
 
-            // full acceptance: reset the drop pressure, accumulate the climb streak
-            if (n_cur < cap && ++n_climb >= climb_threshold(n_cur)) {
-                n_cur++;
+            if (++n_climb >= pressure_reset_limit) {
+                n_drop = 0;
+            }
+
+            if (n_climb >= climb_limit) {
+                if (n_cur < cap) {
+                    n_cur++;
+                }
                 n_climb = 0;
             }
         } else {
